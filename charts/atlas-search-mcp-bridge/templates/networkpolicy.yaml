@@ -1,7 +1,9 @@
 {{- if .Values.networkPolicy.enabled }}
 # Ingress: ONLY the af-mcp-platform aggregator/broker pods may reach this
-# bridge. Egress: DNS, the broker (JWKS + krb5/redeem), and the real CERN
-# OpenSearch host config.targetUrl actually calls.
+# bridge. Egress: DNS, the broker (JWKS + krb5/redeem), the real CERN
+# OpenSearch host config.targetUrl actually calls, and the CERN KDC(s)
+# curl's GSSAPI layer contacts to turn the redeemed ccache's TGT into a
+# service ticket for that host's SPN.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -55,4 +57,19 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.networkPolicy.opensearch.port }}
+
+    # The CERN KDC(s) (etc/krb5.conf's kdc = cerndc.cern.ch) — external to
+    # the cluster, same ipBlock reasoning as opensearch above. Both
+    # protocols are required: MIT krb5 tries UDP first and falls back to
+    # TCP when a reply doesn't fit in one UDP datagram — allowing only one
+    # silently breaks the negotiate handshake (same rationale as
+    # krb5-token-service's own kdc egress rule for kinit).
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.networkPolicy.kdc.cidr | quote }}
+      ports:
+        - protocol: UDP
+          port: {{ .Values.networkPolicy.kdc.port }}
+        - protocol: TCP
+          port: {{ .Values.networkPolicy.kdc.port }}
 {{- end }}

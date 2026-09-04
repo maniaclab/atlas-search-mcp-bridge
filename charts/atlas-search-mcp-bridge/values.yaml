@@ -104,6 +104,17 @@ networkPolicy:
   opensearch:
     cidr: "0.0.0.0/0"
     port: 443
+  # The CERN KDC(s) curl's GSSAPI layer contacts to turn the redeemed
+  # ccache's TGT into a service ticket for the target SPN (etc/krb5.conf's
+  # kdc = cerndc.cern.ch) — external to the cluster, same ipBlock reasoning
+  # as opensearch above. Restrict to CERN's real KDC IPs/CIDRs in
+  # production. Both protocols are required: MIT krb5 tries UDP first and
+  # falls back to TCP when a reply doesn't fit in one UDP datagram —
+  # allowing only one silently breaks the negotiate handshake (same
+  # rationale as krb5-token-service's own kdc egress rule for kinit).
+  kdc:
+    cidr: "0.0.0.0/0"
+    port: 88
 
 # e.g. {limits: {memory: 256Mi}, requests: {cpu: 50m, memory: 128Mi}}
 resources: {}
