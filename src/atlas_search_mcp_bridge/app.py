@@ -106,6 +106,11 @@ async def _proxy_request(request: Request, full_path: str) -> Response:  # noqa:
                     reason="upstream_timeout",
                     subject=claims.sub,
                     request_id=request_id,
+                    # Same text the caller gets in the HTTPException detail
+                    # below -- not a new exposure, just also captured
+                    # server-side so `kubectl logs` alone can diagnose a
+                    # failure without reproducing it live.
+                    exc_detail=str(exc),
                 )
                 raise HTTPException(
                     status_code=status.HTTP_504_GATEWAY_TIMEOUT,
@@ -118,6 +123,7 @@ async def _proxy_request(request: Request, full_path: str) -> Response:  # noqa:
                     reason="upstream_call_failed",
                     subject=claims.sub,
                     request_id=request_id,
+                    exc_detail=str(exc),
                 )
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
@@ -130,6 +136,7 @@ async def _proxy_request(request: Request, full_path: str) -> Response:  # noqa:
             reason="no_krb5_ticket",
             subject=claims.sub,
             request_id=request_id,
+            exc_detail=exc.detail,
         )
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -142,6 +149,7 @@ async def _proxy_request(request: Request, full_path: str) -> Response:  # noqa:
             reason="redeem_failed",
             subject=claims.sub,
             request_id=request_id,
+            exc_detail=exc.detail,
         )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

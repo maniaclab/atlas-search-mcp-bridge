@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 import httpx
 import httpx2
 import pytest
+import structlog
 from af_credentials.proxy import ProxyClient
 from af_credentials.verifier import BrokerTokenVerifier
 
@@ -175,6 +176,27 @@ async def test_upstream_curl_failure_is_502(
         "/mcp", content=b"{}", headers={"Authorization": f"Bearer {token}"}
     )
     assert response.status_code == 502
+
+
+async def test_upstream_curl_failure_logs_exc_detail_for_diagnosis(
+    app_client: httpx.AsyncClient,
+    make_token: Callable[..., str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The audit log must carry enough of the curl failure to diagnose it
+    # from `kubectl logs` alone, without reproducing the call live -- an
+    # outcome/reason pair alone doesn't say *why* curl failed.
+    monkeypatch.setenv("FAKE_CURL_EXIT_CODE", "35")
+    monkeypatch.setenv("FAKE_CURL_STDERR", "curl: (35) SSL connect error")
+    token = make_token()
+    with structlog.testing.capture_logs() as captured:
+        response = await app_client.post(
+            "/mcp", content=b"{}", headers={"Authorization": f"Bearer {token}"}
+        )
+    assert response.status_code == 502
+    audit_entries = [e for e in captured if e.get("reason") == "upstream_call_failed"]
+    assert len(audit_entries) == 1
+    assert "SSL connect error" in audit_entries[0]["exc_detail"]
 
 
 async def test_upstream_timeout_is_504(
