@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "atlas-search-mcp-bridge.fullname" . }}
+  labels:
+    {{- include "atlas-search-mcp-bridge.labels" . | nindent 4 }}
+spec:
+  # ClusterIP only: the sole intended client is the in-cluster broker
+  # aggregator, and the NetworkPolicy enforces exactly that.
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "atlas-search-mcp-bridge.selectorLabels" . | nindent 4 }}

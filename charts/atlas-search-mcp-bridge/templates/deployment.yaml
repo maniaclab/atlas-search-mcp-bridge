@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "atlas-search-mcp-bridge.fullname" . }}
+  labels:
+    {{- include "atlas-search-mcp-bridge.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "atlas-search-mcp-bridge.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "atlas-search-mcp-bridge.selectorLabels" . | nindent 8 }}
+    spec:
+      # This pod never talks to the Kubernetes API and mounts no shared
+      # storage — withholding the ServiceAccount token removes an entire
+      # credential class it has no use for.
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # No elevated capability is needed here at all: curl's GSSAPI/SPNEGO
+      # negotiation needs no on-disk user credential beyond the per-request
+      # ccache this service itself writes to its own tmpfs.
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: atlas-search-mcp-bridge
+          image: {{ include "atlas-search-mcp-bridge.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            # Names must match Settings fields (config.py).
+            - name: BROKER_URL
+              value: {{ .Values.config.brokerUrl | quote }}
+            - name: BROKER_ISSUER
+              value: {{ .Values.config.brokerIssuer | quote }}
+            - name: EXPECTED_AUDIENCE
+              value: {{ .Values.config.expectedAudience | quote }}
+            - name: TARGET_URL
+              value: {{ .Values.config.targetUrl | quote }}
+            - name: CURL_TIMEOUT_SECONDS
+              value: {{ .Values.config.curlTimeoutSeconds | quote }}
+            - name: CURL_BIN
+              value: {{ .Values.config.curlBin | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.config.logLevel | quote }}
+            # Extra env vars from values (name: value pairs)
+            {{- range $key, $val := .Values.env }}
+            - name: {{ $key | quote }}
+              value: {{ $val | quote }}
+            {{- end }}
+          volumeMounts:
+            # readOnlyRootFilesystem requires an explicit writable /tmp:
+            # each request's redeemed ccache is written here (see
+            # af_credentials.proxy.ProxyClient) until the call finishes.
+            # tmpfs-backed (Memory) so ticket material never touches disk,
+            # even transiently.
+            - name: tmp
+              mountPath: /tmp
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            # readyz verifies curl is executable and the broker JWKS is
+            # fetchable — deliberately not the real CERN OpenSearch target,
+            # which would let a CERN-side outage flap this pod.
+            httpGet:
+              path: /readyz
+              port: http
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory

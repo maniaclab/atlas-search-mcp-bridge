@@ -1,0 +1,58 @@
+{{- if .Values.networkPolicy.enabled }}
+# Ingress: ONLY the af-mcp-platform aggregator/broker pods may reach this
+# bridge. Egress: DNS, the broker (JWKS + krb5/redeem), and the real CERN
+# OpenSearch host config.targetUrl actually calls.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "atlas-search-mcp-bridge.fullname" . }}
+  labels:
+    {{- include "atlas-search-mcp-bridge.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "atlas-search-mcp-bridge.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    - from:
+        - namespaceSelector:
+            {{- toYaml .Values.networkPolicy.broker.namespaceSelector | nindent 12 }}
+          podSelector:
+            {{- toYaml .Values.networkPolicy.broker.podSelector | nindent 12 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.networkPolicy.broker.port }}
+
+  egress:
+    # DNS — required to resolve the broker and CERN OpenSearch origins.
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    # The broker's JWKS endpoint and its POST /v1/credentials/krb5/redeem —
+    # this bridge's only in-cluster outbound dependency.
+    - to:
+        - namespaceSelector:
+            {{- toYaml .Values.networkPolicy.brokerEgress.namespaceSelector | nindent 12 }}
+          podSelector:
+            {{- toYaml .Values.networkPolicy.brokerEgress.podSelector | nindent 12 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.networkPolicy.brokerEgress.port }}
+
+    # The real CERN OpenSearch host config.targetUrl calls — external to the
+    # cluster, hence an ipBlock rule rather than a namespace/pod selector.
+    # Restrict networkPolicy.opensearch.cidr to CERN's real egress CIDRs in
+    # production; DNS names can't be used directly in a NetworkPolicy.
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.networkPolicy.opensearch.cidr | quote }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.networkPolicy.opensearch.port }}
+{{- end }}

@@ -1,0 +1,112 @@
+# Default values for atlas-search-mcp-bridge.
+#
+# This service holds no standing secret between requests: it verifies a
+# broker-issued bearer token, redeems a per-request krb5 ccache from the
+# broker, and deletes it the moment one call finishes. It mounts nothing but
+# its own private tmpfs scratch space and runs as a single unprivileged uid
+# for its whole lifetime — same posture as krb5-token-service.
+
+replicaCount: 1
+
+image:
+  registry: ghcr.io
+  repository: maniaclab/atlas-search-mcp-bridge
+  # Defaults to the chart's appVersion when empty.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# Pull secret(s) for the registry above (ghcr packages default to private),
+# e.g. [{name: ghcr-pull-secret}] with the SealedSecret deployed alongside.
+imagePullSecrets: []
+
+nodeSelector: {}
+affinity: {}
+tolerations: []
+
+# Environment for the service (see src/atlas_search_mcp_bridge/config.py for
+# the full documentation of each setting).
+config:
+  # The broker this bridge redeems krb5 tickets from and verifies AF Broker
+  # Identity Tokens against. Must agree with the networkPolicy.broker egress
+  # rule below: the default reaches the broker IN-CLUSTER.
+  brokerUrl: "http://af-mcp-platform-broker.mcp.svc.cluster.local:8080"
+  # Required `iss` claim on inbound identity tokens.
+  brokerIssuer: "https://mcp.af.uchicago.edu"
+  # Required `aud` claim — must equal the `audience:` set on the
+  # `atlas_search_service` entry in af-mcp-platform's services.yaml.
+  expectedAudience: "atlas-search-mcp-bridge"
+  # The real CERN OpenSearch MCP endpoint this deployment forwards to.
+  # Defaults to the DEV cluster — override to the prod host for a
+  # production release (one deployment serves exactly one cluster).
+  targetUrl: "https://os-search-atlas-physics-dev.cern.ch/os/_plugins/_ml/mcp"
+  # Wall-clock bound on the curl subprocess forwarding a request upstream.
+  curlTimeoutSeconds: 30
+  # Path to (or PATH-resolved name of) the curl binary in the container image.
+  curlBin: "curl"
+  logLevel: "INFO"
+
+# Extra environment variables (name: value) appended verbatim.
+env: {}
+
+# Pod-level security context. No capability is added here at all: curl's
+# GSSAPI/SPNEGO negotiation needs no on-disk user credential beyond the
+# per-request ccache this service itself writes to its own tmpfs, so
+# nothing requires root or an elevated capability.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+
+service:
+  # ClusterIP only — the sole intended client is the in-cluster broker
+  # aggregator.
+  port: 8080
+
+networkPolicy:
+  enabled: true
+  # Ingress: ONLY the af-mcp-platform aggregator/broker pods may reach this
+  # bridge. Defaults match the production af-mcp-platform deployment:
+  # namespace `mcp`, broker pods labeled name=af-mcp-platform +
+  # component=broker.
+  broker:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: mcp
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/name: af-mcp-platform
+        app.kubernetes.io/component: broker
+    port: 8080
+  # Egress: besides DNS, ONLY the broker (JWKS + krb5/redeem) and the real
+  # CERN OpenSearch host this deployment forwards to.
+  brokerEgress:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: mcp
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/name: af-mcp-platform
+        app.kubernetes.io/component: broker
+    port: 8080
+  # The CERN OpenSearch cluster config.targetUrl actually calls — external
+  # to the cluster, hence an ipBlock rule rather than a namespace/pod
+  # selector. 0.0.0.0/0 by default on port 443 (restrict to CERN's real
+  # egress CIDRs in production; DNS names can't be used directly in a
+  # NetworkPolicy).
+  opensearch:
+    cidr: "0.0.0.0/0"
+    port: 443
+
+# e.g. {limits: {memory: 256Mi}, requests: {cpu: 50m, memory: 128Mi}}
+resources: {}
+
+nameOverride: ""
+fullnameOverride: ""
