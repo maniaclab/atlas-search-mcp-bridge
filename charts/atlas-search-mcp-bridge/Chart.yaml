@@ -2,8 +2,8 @@ apiVersion: v2
 name: atlas-search-mcp-bridge
 description: Auth-translation reverse proxy (AF Broker Identity Token -> Kerberos SPNEGO) for CERN's ATLAS OpenSearch MCP endpoint
 type: application
-version: 0.1.4
-appVersion: "0.1.4"
+version: 0.1.5
+appVersion: "0.1.5"
 keywords: [kerberos, krb5, spnego, mcp, atlas, hep, analysis-facility, cern, opensearch]
 home: https://github.com/maniaclab/atlas-search-mcp-bridge
 sources: [https://github.com/maniaclab/atlas-search-mcp-bridge]
