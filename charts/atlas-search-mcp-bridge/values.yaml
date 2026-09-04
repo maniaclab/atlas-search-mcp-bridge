@@ -76,6 +76,17 @@ networkPolicy:
   # bridge. Defaults match the production af-mcp-platform deployment:
   # namespace `mcp`, broker pods labeled name=af-mcp-platform +
   # component=broker.
+  #
+  # No crlRefresh here, unlike voms-token-service's chart: this service's
+  # only use of ca-policy-lcg's IGTF bundle is curl's plain --capath TLS
+  # server-cert verification (see proxy_call.py), which never consults
+  # CRLs (no --crlfile/OCSP flag) -- unlike Globus GSI's VOMS proxy
+  # validation, which enforces revocation checking as IGTF/WLCG policy.
+  # A stale CRL file in the bundle is simply never read here. The CA
+  # *root* trust anchor itself (what actually matters for verification)
+  # rotates on a years-long cadence, refreshed by re-releasing the image
+  # when ca-policy-lcg picks up a new one -- same as voms-token-service's
+  # own crlRefresh.enabled=false fallback mode.
   broker:
     namespaceSelector:
       matchLabels:
