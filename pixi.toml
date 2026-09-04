@@ -1,0 +1,59 @@
+[workspace]
+name = "atlas-search-mcp-bridge"
+version = "0.1.0"
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-arm64", "osx-64"]
+exclude-newer = "7d"
+
+[dependencies]
+python = ">=3.12,<3.13"
+
+[feature.service.dependencies]
+fastapi = ">=0.115"
+uvicorn = ">=0.30"
+pydantic = ">=2.7"
+pydantic-settings = ">=2.3"
+structlog = ">=24.4"
+# GSSAPI/SPNEGO-capable curl (`--negotiate`) -- conda-forge's build links
+# against krb5's GSSAPI libs, so `krb5` below is a real runtime dependency
+# of curl's negotiate support, not just an unrelated Kerberos package.
+curl = ">=8.0"
+krb5 = ">=1.21"
+
+[feature.service.pypi-dependencies]
+atlas-search-mcp-bridge = { path = ".", editable = true }
+# BrokerTokenVerifier (JWKS verification) and ProxyClient(kind="krb5")
+# (ticket redemption) -- see https://github.com/maniaclab/af-credentials.
+# PINNED TO THE v0.3.0 GIT TAG, NOT PyPI: as of this writing af-credentials
+# on PyPI only goes up to 0.2.0 (kind="krb5" support landed in the v0.3.0
+# tag but hasn't been published as a release yet). Switch this back to a
+# plain version pin (">=0.3.0,<0.4") once 0.3.0 is on PyPI.
+af-credentials = { git = "https://github.com/maniaclab/af-credentials.git", tag = "v0.3.0" }
+
+[feature.service.tasks]
+serve = { cmd = "uvicorn atlas_search_mcp_bridge.app:app --host 0.0.0.0 --port 8080 --reload", description = "Run dev server at http://localhost:8080" }
+
+[feature.dev.dependencies]
+pytest = ">=8.0"
+pytest-asyncio = ">=0.23"
+anyio = ">=4.0"
+httpx = ">=0.27"
+ruff = ">=0.4"
+mypy = ">=1.10"
+pre-commit = ">=3.7"
+tbump = ">=6.7.0"
+
+# Each task name must be defined in exactly one feature: pixi resolves
+# duplicate names across features nondeterministically.
+[feature.dev.tasks]
+lint = { cmd = "ruff check src tests && ruff format --check src tests", description = "Ruff lint + format check" }
+fmt = { cmd = "ruff format src tests && ruff check --fix src tests", description = "Format and auto-fix source" }
+typecheck = { cmd = "mypy src", description = "Type-check service source" }
+pre-commit = { cmd = "pre-commit run --all-files", description = "Run pre-commit hooks on all files" }
+lint-all = { depends-on = ["lint", "typecheck", "pre-commit"], description = "Everything the CI lint job runs" }
+test = { cmd = "pytest tests/ -v", description = "Service tests" }
+check = { depends-on = ["lint", "typecheck", "test"], description = "Quick check: lint + typecheck + tests" }
+
+[environments]
+service = { features = ["service"], solve-group = "default" }
+dev = { features = ["service", "dev"], solve-group = "default" }
