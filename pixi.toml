@@ -5,6 +5,12 @@ channels = ["conda-forge"]
 platforms = ["linux-64", "osx-arm64", "osx-64"]
 exclude-newer = "7d"
 
+[exclude-newer]
+# af-credentials 0.3.0 (kind="krb5" support) is a fresh, known-good release
+# this service depends on directly -- exempted from the workspace-wide 7d
+# safety margin above rather than loosening it for every other dependency.
+af-credentials = "0d"
+
 [dependencies]
 python = ">=3.12,<3.13"
 
@@ -19,16 +25,14 @@ structlog = ">=24.4"
 # of curl's negotiate support, not just an unrelated Kerberos package.
 curl = ">=8.0"
 krb5 = ">=1.21"
+# BrokerTokenVerifier (JWKS verification) and ProxyClient(kind="krb5")
+# (ticket redemption) -- see https://github.com/maniaclab/af-credentials.
+# Packaged on conda-forge (af-credentials-feedstock), same as this
+# workspace's other runtime deps -- no need for a pypi-dependency here.
+af-credentials = ">=0.3.0,<0.4"
 
 [feature.service.pypi-dependencies]
 atlas-search-mcp-bridge = { path = ".", editable = true }
-# BrokerTokenVerifier (JWKS verification) and ProxyClient(kind="krb5")
-# (ticket redemption) -- see https://github.com/maniaclab/af-credentials.
-# PINNED TO THE v0.3.0 GIT TAG, NOT PyPI: as of this writing af-credentials
-# on PyPI only goes up to 0.2.0 (kind="krb5" support landed in the v0.3.0
-# tag but hasn't been published as a release yet). Switch this back to a
-# plain version pin (">=0.3.0,<0.4") once 0.3.0 is on PyPI.
-af-credentials = { git = "https://github.com/maniaclab/af-credentials.git", tag = "v0.3.0" }
 
 [feature.service.tasks]
 serve = { cmd = "uvicorn atlas_search_mcp_bridge.app:app --host 0.0.0.0 --port 8080 --reload", description = "Run dev server at http://localhost:8080" }
