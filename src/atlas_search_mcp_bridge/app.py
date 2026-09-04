@@ -216,7 +216,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "Auth-translation reverse proxy: AF Broker Identity Token in, "
             "Kerberos SPNEGO Negotiate out, for CERN's ATLAS OpenSearch MCP endpoint"
         ),
-        version="0.1.3",
+        version="0.1.4",
         lifespan=_lifespan,
     )
     application.state.settings = settings
