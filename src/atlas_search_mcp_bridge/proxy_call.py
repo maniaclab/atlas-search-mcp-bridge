@@ -102,6 +102,13 @@ def call_upstream(
             "--negotiate",
             "-u",
             ":",
+            # Requests and transparently decodes gzip/deflate/br -- this
+            # proxy forwards only status/content-type/body (see
+            # UpstreamResponse), never Content-Encoding, so an
+            # un-decompressed body would reach the caller as
+            # undecodable-as-JSON raw bytes. OpenSearch compresses
+            # responses regardless of whether this flag asks for it.
+            "--compressed",
             "-D",
             str(header_file),
             "-o",

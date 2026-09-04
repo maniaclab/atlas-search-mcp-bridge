@@ -61,6 +61,11 @@ def test_call_upstream_pipes_body_via_stdin_not_argv(
     assert "--negotiate" in argv
     assert "-u" in argv
     assert ":" in argv
+    # OpenSearch compresses responses regardless of whether this is asked
+    # for; this proxy forwards only status/content-type/body, never
+    # Content-Encoding, so curl must decode compression itself or the
+    # caller receives undecodable-as-JSON raw gzip bytes.
+    assert "--compressed" in argv
     assert "--data-binary" in argv
     assert "@-" in argv
     # The body must never appear as a literal argv token.
