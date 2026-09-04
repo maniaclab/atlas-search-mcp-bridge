@@ -72,6 +72,54 @@ def test_call_upstream_pipes_body_via_stdin_not_argv(
     assert "Authorization" not in joined
 
 
+def test_call_upstream_passes_capath_when_x509_cert_dir_set(
+    tmp_path: Path, fake_curl: FakeCurl, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # CERN's own hosts (including the OpenSearch target) chain to the CERN
+    # Grid Certification Authority, which the generic CA bundle curl ships
+    # with does not trust -- ca-policy-lcg's IGTF bundle (X509_CERT_DIR,
+    # same package/env var voms-token-service uses) must be passed
+    # explicitly via --capath rather than relying on curl to discover it.
+    monkeypatch.setenv("X509_CERT_DIR", "/fake/grid-security/certificates")
+    ccache_path = tmp_path / "krb5cc-test"
+    ccache_path.write_bytes(b"fake-ccache-bytes")
+
+    call_upstream(
+        method="POST",
+        body=b"{}",
+        headers={},
+        target_url="https://opensearch.test/mcp",
+        ccache_path=ccache_path,
+        timeout=5,
+        curl_bin=str(fake_curl.path),
+    )
+
+    argv = fake_curl.args_file.read_text().splitlines()
+    assert "--capath" in argv
+    assert "/fake/grid-security/certificates" in argv
+
+
+def test_call_upstream_omits_capath_when_x509_cert_dir_unset(
+    tmp_path: Path, fake_curl: FakeCurl, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("X509_CERT_DIR", raising=False)
+    ccache_path = tmp_path / "krb5cc-test"
+    ccache_path.write_bytes(b"fake-ccache-bytes")
+
+    call_upstream(
+        method="POST",
+        body=b"{}",
+        headers={},
+        target_url="https://opensearch.test/mcp",
+        ccache_path=ccache_path,
+        timeout=5,
+        curl_bin=str(fake_curl.path),
+    )
+
+    argv = fake_curl.args_file.read_text().splitlines()
+    assert "--capath" not in argv
+
+
 def test_call_upstream_sets_krb5ccname_env(tmp_path: Path, fake_curl: FakeCurl) -> None:
     """The fake curl script dumps its own os.environ["KRB5CCNAME"] to a file —
     proves call_upstream sets it via subprocess.run(..., env=...) for real,

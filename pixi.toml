@@ -25,6 +25,17 @@ structlog = ">=24.4"
 # of curl's negotiate support, not just an unrelated Kerberos package.
 curl = ">=8.0"
 krb5 = ">=1.21"
+# IGTF CA trust bundle (same package voms-token-service uses); its conda
+# activation script exports X509_CERT_DIR, which proxy_call.py passes to
+# curl as --capath. CERN's own compute/service hosts (including the
+# OpenSearch target) present certificates chaining to the CERN Grid
+# Certification Authority, which the generic conda-forge/Mozilla CA bundle
+# curl ships with does not trust. Unlike voms-token-service, this service
+# never checks certificate revocation (curl's plain TLS verification here
+# has no --crlfile/OCSP flag), so no CRL-refresh sidecar is needed -- the
+# baked bundle is refreshed by re-releasing, same as voms-token-service's
+# own crlRefresh.enabled=false mode.
+ca-policy-lcg = "*"
 # BrokerTokenVerifier (JWKS verification) and ProxyClient(kind="krb5")
 # (ticket redemption) -- see https://github.com/maniaclab/af-credentials.
 # Packaged on conda-forge (af-credentials-feedstock), same as this

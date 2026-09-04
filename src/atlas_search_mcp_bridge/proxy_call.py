@@ -98,6 +98,7 @@ def call_upstream(
         cmd = [
             curl_bin,
             "-s",
+            "-S",  # show the error line even in silent mode -- see UpstreamCallError below
             "--negotiate",
             "-u",
             ":",
@@ -112,6 +113,18 @@ def call_upstream(
             "--max-time",
             str(timeout),
         ]
+        # CERN's own hosts (including every real target_url this service
+        # forwards to) chain to the CERN Grid Certification Authority, which
+        # the generic CA bundle curl ships with does not trust -- pass the
+        # IGTF bundle (X509_CERT_DIR, exported by ca-policy-lcg's conda
+        # activation script; see pixi.toml) explicitly rather than relying
+        # on curl to discover it on its own. Absent in a local dev
+        # environment without that package installed -- curl then falls
+        # back to its own default trust store, which is fine for anything
+        # that isn't CERN-internal.
+        x509_cert_dir = os.environ.get("X509_CERT_DIR")
+        if x509_cert_dir:
+            cmd += ["--capath", x509_cert_dir]
         # Only attach a request body for methods/calls that actually carry
         # one -- passing --data-binary on a bodyless GET/DELETE would force
         # curl to treat stdin as data regardless, which is harmless for curl
