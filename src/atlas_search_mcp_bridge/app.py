@@ -138,9 +138,17 @@ async def _proxy_request(request: Request, full_path: str) -> Response:  # noqa:
             request_id=request_id,
             exc_detail=exc.detail,
         )
+        # 401, not 404: this response goes back over the MCP streamable-HTTP
+        # transport, which treats a 404 to a POST as "session terminated"
+        # (mcp.client.streamable_http._handle_post_request) and replaces it
+        # with a generic JSON-RPC error, discarding exc.detail entirely. A
+        # 401 raises a normal httpx.HTTPStatusError instead, and it's also
+        # the more accurate status: the bridge genuinely could not
+        # authenticate to the upstream (no usable Kerberos ticket).
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail=exc.detail,
+            headers={"WWW-Authenticate": "Negotiate"},
         ) from exc
     except ProxyRedeemError as exc:
         logger.info(

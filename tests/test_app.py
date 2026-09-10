@@ -128,12 +128,22 @@ async def test_valid_token_forwards_request_and_returns_upstream_response(
     assert response.json() == {"jsonrpc": "2.0", "result": {}}
 
 
-async def test_no_krb5_ticket_available_is_404(
+async def test_no_krb5_ticket_available_is_401(
     settings: Settings,
     jwks: list[dict[str, Any]],
     fake_curl: FakeCurl,
     make_token: Callable[..., str],
 ) -> None:
+    # Deliberately 401, not 404: the MCP streamable-HTTP transport treats a
+    # 404 response to a POST as "session terminated" (mcp.client.
+    # streamable_http._handle_post_request), silently discarding this
+    # response's body and replacing it with a misleading generic
+    # "Session terminated" JSON-RPC error -- so a 404 here would mean the
+    # bridge's own exc.detail never reaches the caller at all. 401 raises a
+    # normal httpx.HTTPStatusError instead, and af-mcp-platform's aggregator
+    # already classifies an injected-credential 401 as "unauthorized" ->
+    # the catalog's "link_required" status, rather than lumping it in with
+    # a genuine outage as "unavailable".
     settings.curl_bin = str(fake_curl.path)
     app, _ = _wire_app(settings, jwks, redeem_status=404)
     token = make_token()
@@ -143,7 +153,8 @@ async def test_no_krb5_ticket_available_is_404(
         response = await client.post(
             "/mcp", content=b"{}", headers={"Authorization": f"Bearer {token}"}
         )
-    assert response.status_code == 404
+    assert response.status_code == 401
+    assert response.json()["detail"] == "error"
 
 
 async def test_broker_redeem_error_is_502(
