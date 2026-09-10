@@ -106,6 +106,11 @@ async def _proxy_request(request: Request, full_path: str) -> Response:  # noqa:
                     reason="upstream_timeout",
                     subject=claims.sub,
                     request_id=request_id,
+                    # Same text the caller gets in the HTTPException detail
+                    # below -- not a new exposure, just also captured
+                    # server-side so `kubectl logs` alone can diagnose a
+                    # failure without reproducing it live.
+                    exc_detail=str(exc),
                 )
                 raise HTTPException(
                     status_code=status.HTTP_504_GATEWAY_TIMEOUT,
@@ -118,6 +123,7 @@ async def _proxy_request(request: Request, full_path: str) -> Response:  # noqa:
                     reason="upstream_call_failed",
                     subject=claims.sub,
                     request_id=request_id,
+                    exc_detail=str(exc),
                 )
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
@@ -130,10 +136,19 @@ async def _proxy_request(request: Request, full_path: str) -> Response:  # noqa:
             reason="no_krb5_ticket",
             subject=claims.sub,
             request_id=request_id,
+            exc_detail=exc.detail,
         )
+        # 401, not 404: this response goes back over the MCP streamable-HTTP
+        # transport, which treats a 404 to a POST as "session terminated"
+        # (mcp.client.streamable_http._handle_post_request) and replaces it
+        # with a generic JSON-RPC error, discarding exc.detail entirely. A
+        # 401 raises a normal httpx.HTTPStatusError instead, and it's also
+        # the more accurate status: the bridge genuinely could not
+        # authenticate to the upstream (no usable Kerberos ticket).
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail=exc.detail,
+            headers={"WWW-Authenticate": "Negotiate"},
         ) from exc
     except ProxyRedeemError as exc:
         logger.info(
@@ -142,6 +157,7 @@ async def _proxy_request(request: Request, full_path: str) -> Response:  # noqa:
             reason="redeem_failed",
             subject=claims.sub,
             request_id=request_id,
+            exc_detail=exc.detail,
         )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -208,7 +224,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "Auth-translation reverse proxy: AF Broker Identity Token in, "
             "Kerberos SPNEGO Negotiate out, for CERN's ATLAS OpenSearch MCP endpoint"
         ),
-        version="0.1.0",
+        version="0.1.5",
         lifespan=_lifespan,
     )
     application.state.settings = settings

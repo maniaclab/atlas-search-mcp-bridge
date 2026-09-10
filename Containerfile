@@ -36,10 +36,16 @@ RUN apt-get update && \
 COPY --from=builder /app/.pixi/envs/service /app/.pixi/envs/service
 COPY --from=builder /app/src /app/src
 COPY --from=builder /app/entrypoint.sh /app/entrypoint.sh
+# Baked in, same as krb5-token-service's own etc/krb5.conf: curl's GSSAPI
+# layer needs to know CERN.CH's KDC to build a service ticket for the
+# target SPN from the ccache's TGT -- without a krb5.conf naming it, every
+# --negotiate call fails regardless of how valid the ccache itself is.
+COPY etc/krb5.conf /app/etc/krb5.conf
 
 ENV PYTHONPATH="/app/src" \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    KRB5_CONFIG=/app/etc/krb5.conf
 
 # This service holds no standing secret between requests: it receives a
 # bearer identity token, redeems a per-request ccache from the broker, and
