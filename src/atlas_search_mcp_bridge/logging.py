@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TextIO
 
 import structlog
 
@@ -37,8 +37,8 @@ class SensitiveValueRedactProcessor:
         return event_dict
 
 
-def configure_logging(log_level: str = "INFO") -> None:
-    """Wire structlog to emit JSON lines to stdout.
+def configure_logging(log_level: str = "INFO", stream: TextIO | None = None) -> None:
+    """Wire structlog to emit JSON lines to *stream* (stdout by default).
 
     Call once at application startup before any log statements.
     """
@@ -73,12 +73,21 @@ def configure_logging(log_level: str = "INFO") -> None:
         foreign_pre_chain=shared_processors,
     )
 
-    handler = logging.StreamHandler(sys.stdout)
+    handler = logging.StreamHandler(stream or sys.stdout)
     handler.setFormatter(formatter)
 
     root_logger = logging.getLogger()
     root_logger.handlers = [handler]
     root_logger.setLevel(log_level.upper())
 
-    for noisy in ("uvicorn.access", "httpx", "httpcore"):
+    # uvicorn installs plain-text handlers on its own loggers before it
+    # imports the app; hand its lifecycle lines to the root JSON handler.
+    # Its access line is suppressed (WARNING below) because RequestLogMiddleware
+    # writes one that carries the request id and skips successful probes.
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        uvicorn_logger = logging.getLogger(name)
+        uvicorn_logger.handlers = []
+        uvicorn_logger.propagate = True
+
+    for noisy in ("uvicorn.access", "httpx", "httpx2", "httpcore"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
