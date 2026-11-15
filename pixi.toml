@@ -6,9 +6,11 @@ platforms = ["linux-64", "osx-arm64", "osx-64"]
 exclude-newer = "7d"
 
 [exclude-newer]
-# af-credentials 0.3.0 (kind="krb5" support) is a fresh, known-good release
-# this service depends on directly -- exempted from the workspace-wide 7d
-# safety margin above rather than loosening it for every other dependency.
+# af-credentials 0.4.0 (JWKS refetch rate limit, has_keys/ensure_keys) is a
+# fresh, known-good release this service depends on directly -- exempted from
+# the workspace-wide 7d safety margin above rather than loosening it for every
+# other dependency. Can be removed once 0.4.0 is older than the window (after
+# ~2026-11-22).
 af-credentials = "0d"
 
 [dependencies]
@@ -40,7 +42,7 @@ ca-policy-lcg = "*"
 # (ticket redemption) -- see https://github.com/maniaclab/af-credentials.
 # Packaged on conda-forge (af-credentials-feedstock), same as this
 # workspace's other runtime deps -- no need for a pypi-dependency here.
-af-credentials = ">=0.3.0,<0.4"
+af-credentials = ">=0.4.0"
 
 [feature.service.pypi-dependencies]
 atlas-search-mcp-bridge = { path = ".", editable = true }
