@@ -201,14 +201,10 @@ async def _readyz(request: Request) -> Response:
     problems: list[str] = []
     if shutil.which(settings.curl_bin) is None:
         problems.append(f"curl binary not found or not executable: {settings.curl_bin}")
-    # Fetch only until the verifier holds keys; afterwards the probe is
-    # served from its cache, so it costs no JWKS fetch (and a broker outage
-    # does not flap readiness). The verifier has no public "keys loaded"
-    # check, hence the private access.
-    try:
-        if not verifier._keys_by_kid:
-            await verifier._refresh()
-    except httpx2.HTTPError:
+    # ensure_keys() fetches only until the verifier holds keys; afterwards the
+    # probe is served from its cache, so it costs no JWKS fetch (and a broker
+    # outage does not flap readiness).
+    if not await verifier.ensure_keys():
         problems.append(f"broker JWKS endpoint unreachable: {settings.broker_jwks_url}")
 
     if problems:
