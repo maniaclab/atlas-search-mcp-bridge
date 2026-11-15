@@ -244,7 +244,7 @@ def create_app(
             "Auth-translation reverse proxy: AF Broker Identity Token in, "
             "Kerberos SPNEGO Negotiate out, for CERN's ATLAS OpenSearch MCP endpoint"
         ),
-        version="0.1.6",
+        version="0.2.0",
         lifespan=_lifespan,
     )
     application.state.settings = settings
