@@ -22,8 +22,6 @@ from typing import TYPE_CHECKING, Any
 import httpx
 import httpx2
 import pytest
-from af_credentials.proxy import ProxyClient
-from af_credentials.verifier import BrokerTokenVerifier
 
 from atlas_search_mcp_bridge.app import create_app
 from tests.ccache_fixtures import build_ccache
@@ -73,19 +71,7 @@ async def test_full_pipeline_writes_real_ccache_to_krb5ccname(
             )
         return httpx2.Response(404, json={"detail": "not found"})
 
-    broker_client = httpx2.AsyncClient(transport=httpx2.MockTransport(broker_handler))
-
-    app = create_app(settings)
-    app.state.http_client = broker_client
-    app.state.verifier = BrokerTokenVerifier(
-        settings.broker_jwks_url,
-        settings.broker_issuer,
-        settings.expected_audience,
-        http_client=broker_client,
-    )
-    app.state.proxy_client = ProxyClient(
-        settings.broker_url, kind="krb5", http_client=broker_client
-    )
+    app = create_app(settings, broker_transport=httpx2.MockTransport(broker_handler))
 
     token = make_token(sub="gstark")
     async with httpx.AsyncClient(

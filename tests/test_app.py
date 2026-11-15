@@ -14,8 +14,6 @@ import httpx
 import httpx2
 import pytest
 import structlog
-from af_credentials.proxy import ProxyClient
-from af_credentials.verifier import BrokerTokenVerifier
 
 from atlas_search_mcp_bridge.app import create_app
 
@@ -41,9 +39,9 @@ def _redeem_body(*, status_code: int = 200, detail: str = "error") -> dict[str, 
     }
 
 
-def _make_broker_client(
+def _broker_transport(
     jwks: list[dict[str, Any]], *, redeem_status: int = 200
-) -> httpx2.AsyncClient:
+) -> httpx2.MockTransport:
     def handler(request: httpx2.Request) -> httpx2.Response:
         if request.url.path.endswith("/.well-known/jwks.json"):
             return httpx2.Response(200, json={"keys": jwks})
@@ -53,25 +51,16 @@ def _make_broker_client(
             )
         return httpx2.Response(404, json={"detail": "not found"})
 
-    return httpx2.AsyncClient(transport=httpx2.MockTransport(handler))
+    return httpx2.MockTransport(handler)
 
 
 def _wire_app(
     settings: Settings, jwks: list[dict[str, Any]], *, redeem_status: int = 200
-) -> tuple[Any, httpx2.AsyncClient]:
-    app = create_app(settings)
-    broker_client = _make_broker_client(jwks, redeem_status=redeem_status)
-    app.state.http_client = broker_client
-    app.state.verifier = BrokerTokenVerifier(
-        settings.broker_jwks_url,
-        settings.broker_issuer,
-        settings.expected_audience,
-        http_client=broker_client,
+) -> Any:
+    return create_app(
+        settings,
+        broker_transport=_broker_transport(jwks, redeem_status=redeem_status),
     )
-    app.state.proxy_client = ProxyClient(
-        settings.broker_url, kind="krb5", http_client=broker_client
-    )
-    return app, broker_client
 
 
 @pytest.fixture
@@ -79,7 +68,7 @@ async def app_client(
     settings: Settings, jwks: list[dict[str, Any]], fake_curl: FakeCurl
 ) -> httpx.AsyncClient:
     settings.curl_bin = str(fake_curl.path)
-    app, _ = _wire_app(settings, jwks)
+    app = _wire_app(settings, jwks)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
@@ -145,7 +134,7 @@ async def test_no_krb5_ticket_available_is_401(
     # the catalog's "link_required" status, rather than lumping it in with
     # a genuine outage as "unavailable".
     settings.curl_bin = str(fake_curl.path)
-    app, _ = _wire_app(settings, jwks, redeem_status=404)
+    app = _wire_app(settings, jwks, redeem_status=404)
     token = make_token()
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
@@ -164,7 +153,7 @@ async def test_broker_redeem_error_is_502(
     make_token: Callable[..., str],
 ) -> None:
     settings.curl_bin = str(fake_curl.path)
-    app, _ = _wire_app(settings, jwks, redeem_status=500)
+    app = _wire_app(settings, jwks, redeem_status=500)
     token = make_token()
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"

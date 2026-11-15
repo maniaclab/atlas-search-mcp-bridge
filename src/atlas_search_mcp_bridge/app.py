@@ -212,8 +212,17 @@ async def _lifespan(application: FastAPI) -> AsyncIterator[None]:
         await application.state.http_client.aclose()
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
-    """Build the application; tests pass explicit Settings, production uses env."""
+def create_app(
+    settings: Settings | None = None,
+    *,
+    broker_transport: httpx2.AsyncBaseTransport | None = None,
+) -> FastAPI:
+    """Build the application; tests pass explicit Settings, production uses env.
+
+    *broker_transport* replaces the network transport of the one HTTP client
+    every broker call (JWKS, readiness, ticket redemption) goes through, so
+    tests can stand in for the broker.
+    """
     if settings is None:
         settings = get_settings()
     configure_logging(settings.log_level)
@@ -231,7 +240,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Shared across the verifier, the proxy client, and readyz's own JWKS
     # reachability check -- one client, one place for tests to redirect all
     # three at once via httpx2.MockTransport (see tests/test_app.py).
-    application.state.http_client = httpx2.AsyncClient()
+    application.state.http_client = httpx2.AsyncClient(transport=broker_transport)
     application.state.verifier = BrokerTokenVerifier(
         settings.broker_jwks_url,
         settings.broker_issuer,
