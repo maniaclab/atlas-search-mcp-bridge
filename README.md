@@ -76,13 +76,15 @@ Env-driven (`src/atlas_search_mcp_bridge/config.py`):
 | `CURL_BIN` | `curl` | Path to (or PATH-resolved name of) the curl binary. |
 | `LOG_LEVEL` | `INFO` | |
 
+Every log line is a JSON object. The broker's `X-Request-ID` is logged as `request_id` on every line of the request (one is generated if absent) and is forwarded on the ticket redeem call. A successful `/healthz` or `/readyz` writes no access line; a failing one does. The broker JWKS is cached for an hour, with an early refetch for an unknown `kid` at most once per 30 seconds.
+
 ## API
 
 | Endpoint | Auth | Behavior |
 | --- | --- | --- |
 | `GET`/`POST`/`DELETE` `/{path}` | `Authorization: Bearer <AF Broker Identity Token>` | Verifies the token, redeems a krb5 ticket for its subject, forwards the request to `TARGET_URL` via `curl --negotiate`. 401 on a missing/invalid/expired token; 404 if the caller has no linked/mintable krb5 credential (`ProxyNotAvailableError`); 502 if the broker's redeem call itself fails (`ProxyRedeemError`) or curl fails; 504 if curl times out. |
 | `GET /healthz` | none | Always 200. |
-| `GET /readyz` | none | 200 only when curl is executable and the broker JWKS is fetchable — deliberately does **not** probe the real CERN OpenSearch target (a CERN-side outage must not flap this pod's readiness). |
+| `GET /readyz` | none | 200 only when curl is executable and the broker JWKS has been loaded (fetched once, then served from the verifier's cache, so probes cost no fetch) — deliberately does **not** probe the real CERN OpenSearch target (a CERN-side outage must not flap this pod's readiness). |
 
 ## Development
 
