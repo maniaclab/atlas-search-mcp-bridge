@@ -254,3 +254,44 @@ async def test_readiness_fails_when_no_keys_were_ever_loaded(
 ) -> None:
     broker.jwks_up = False
     assert (await client.get("/readyz")).status_code == 503
+
+
+async def test_readyz_reports_not_ready_when_ensure_keys_says_no_keys(
+    settings: Settings,
+    broker: StubBroker,
+    fake_curl: FakeCurl,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Pins that readiness is decided through the verifier's public
+    # ensure_keys(), not by reaching into its private key cache.
+    settings.curl_bin = str(fake_curl.path)
+    app = create_app(settings, broker_transport=httpx2.MockTransport(broker))
+
+    async def no_keys() -> bool:
+        return False
+
+    monkeypatch.setattr(app.state.verifier, "ensure_keys", no_keys)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as probe_client:
+        assert (await probe_client.get("/readyz")).status_code == 503
+
+
+async def test_readyz_reports_ready_when_ensure_keys_says_keys_are_held(
+    settings: Settings,
+    broker: StubBroker,
+    fake_curl: FakeCurl,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings.curl_bin = str(fake_curl.path)
+    broker.jwks_up = False
+    app = create_app(settings, broker_transport=httpx2.MockTransport(broker))
+
+    async def keys_held() -> bool:
+        return True
+
+    monkeypatch.setattr(app.state.verifier, "ensure_keys", keys_held)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as probe_client:
+        assert (await probe_client.get("/readyz")).status_code == 200
