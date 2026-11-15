@@ -26,6 +26,7 @@ from af_credentials.proxy import (
     ProxyNotAvailableError,
     ProxyRedeemError,
 )
+from af_credentials.verifier import BrokerTokenVerifier
 from fastapi import FastAPI, HTTPException, Request, Response, status
 
 if TYPE_CHECKING:
@@ -42,7 +43,6 @@ from atlas_search_mcp_bridge.proxy_call import (
     UpstreamTimeoutError,
     call_upstream,
 )
-from atlas_search_mcp_bridge.verifier import CachedBrokerTokenVerifier
 
 logger = structlog.get_logger(__name__)
 
@@ -73,7 +73,7 @@ async def _proxy_request(request: Request, full_path: str) -> Response:  # noqa:
     # parameter name) -- unused otherwise, since this is a fixed-target
     # proxy: the inbound path is not itself interpreted.
     settings: Settings = request.app.state.settings
-    verifier: CachedBrokerTokenVerifier = request.app.state.verifier
+    verifier: BrokerTokenVerifier = request.app.state.verifier
     proxy_client: ProxyClient = request.app.state.proxy_client
     started = time.perf_counter()
 
@@ -197,14 +197,17 @@ async def _readyz(request: Request) -> Response:
     krb5-token-service's readyz not checking KDC reachability).
     """
     settings: Settings = request.app.state.settings
-    verifier: CachedBrokerTokenVerifier = request.app.state.verifier
+    verifier: BrokerTokenVerifier = request.app.state.verifier
     problems: list[str] = []
     if shutil.which(settings.curl_bin) is None:
         problems.append(f"curl binary not found or not executable: {settings.curl_bin}")
-    # Served from the verifier's cache once keys are held, so a probe does not
-    # cost a JWKS fetch (and a broker outage does not flap readiness).
+    # Fetch only until the verifier holds keys; afterwards the probe is
+    # served from its cache, so it costs no JWKS fetch (and a broker outage
+    # does not flap readiness). The verifier has no public "keys loaded"
+    # check, hence the private access.
     try:
-        await verifier.ensure_keys_loaded()
+        if not verifier._keys_by_kid:
+            await verifier._refresh()
     except httpx2.HTTPError:
         problems.append(f"broker JWKS endpoint unreachable: {settings.broker_jwks_url}")
 
@@ -257,7 +260,7 @@ def create_app(
         transport=broker_transport,
         event_hooks={"request": [forward_request_id_to_redeem]},
     )
-    application.state.verifier = CachedBrokerTokenVerifier(
+    application.state.verifier = BrokerTokenVerifier(
         settings.broker_jwks_url,
         settings.broker_issuer,
         settings.expected_audience,

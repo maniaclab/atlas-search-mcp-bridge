@@ -17,7 +17,6 @@ import uvicorn.config
 
 from atlas_search_mcp_bridge.app import create_app
 from atlas_search_mcp_bridge.logging import configure_logging
-from atlas_search_mcp_bridge.verifier import CachedBrokerTokenVerifier
 from tests.test_app import _redeem_body
 
 if TYPE_CHECKING:
@@ -241,18 +240,6 @@ async def test_repeated_readiness_probes_fetch_the_jwks_once(
     assert len(broker.fetches("/.well-known/jwks.json")) == 1
 
 
-async def test_unknown_kid_triggers_one_refetch_then_is_rate_limited(
-    client: httpx.AsyncClient, make_token: Callable[..., str], broker: StubBroker
-) -> None:
-    await _call(client, make_token())
-    for _ in range(5):
-        response = await _call(client, make_token(kid="rotated-away"))
-        assert response.status_code == 401
-    # An early refetch for an unknown kid is allowed at most once per
-    # min-refetch window; the keys were fetched moments ago.
-    assert len(broker.fetches("/.well-known/jwks.json")) == 1
-
-
 async def test_readiness_survives_a_broker_outage_once_keys_are_held(
     client: httpx.AsyncClient, make_token: Callable[..., str], broker: StubBroker
 ) -> None:
@@ -267,50 +254,3 @@ async def test_readiness_fails_when_no_keys_were_ever_loaded(
 ) -> None:
     broker.jwks_up = False
     assert (await client.get("/readyz")).status_code == 503
-
-
-async def test_unknown_kid_refetches_once_the_window_has_passed(
-    settings: Settings, broker: StubBroker, make_token: Callable[..., str]
-) -> None:
-    verifier = CachedBrokerTokenVerifier(
-        settings.broker_jwks_url,
-        settings.broker_issuer,
-        settings.expected_audience,
-        min_refetch=0.0,
-        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(broker)),
-    )
-    assert await verifier.verify(make_token()) is not None
-    assert await verifier.verify(make_token(kid="rotated-in")) is None
-    assert len(broker.fetches("/.well-known/jwks.json")) == 2
-
-
-async def test_keys_are_refetched_after_the_ttl_lapses(
-    settings: Settings, broker: StubBroker, make_token: Callable[..., str]
-) -> None:
-    verifier = CachedBrokerTokenVerifier(
-        settings.broker_jwks_url,
-        settings.broker_issuer,
-        settings.expected_audience,
-        cache_ttl=-1.0,
-        min_refetch=0.0,
-        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(broker)),
-    )
-    await verifier.verify(make_token())
-    await verifier.verify(make_token())
-    assert len(broker.fetches("/.well-known/jwks.json")) == 2
-
-
-async def test_failed_refetch_keeps_serving_the_held_keys(
-    settings: Settings, broker: StubBroker, make_token: Callable[..., str]
-) -> None:
-    verifier = CachedBrokerTokenVerifier(
-        settings.broker_jwks_url,
-        settings.broker_issuer,
-        settings.expected_audience,
-        cache_ttl=-1.0,
-        min_refetch=0.0,
-        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(broker)),
-    )
-    await verifier.verify(make_token())
-    broker.jwks_up = False
-    assert await verifier.verify(make_token()) is not None
