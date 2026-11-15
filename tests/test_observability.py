@@ -151,7 +151,7 @@ async def test_audit_line_has_the_standard_fields(
 ) -> None:
     await _call(client, make_token(sub="gstark"), **{"X-Request-ID": "abc"})
     (audit,) = [line for line in _log_lines(log_stream) if line["event"] == "audit"]
-    assert audit["outcome"] == "ok"
+    assert audit["outcome"] == "success"
     assert audit["subject"] == "gstark"
     assert audit["duration_ms"] >= 0
     assert {"timestamp", "level", "logger", "request_id"} <= audit.keys()
