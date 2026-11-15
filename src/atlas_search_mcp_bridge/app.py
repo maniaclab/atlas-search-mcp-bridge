@@ -177,7 +177,7 @@ async def _proxy_request(request: Request, full_path: str) -> Response:  # noqa:
 
     logger.info(
         "audit",
-        outcome="ok",
+        outcome="success",
         duration_ms=_elapsed_ms(started),
         subject=claims.sub,
         status_code=upstream.status_code,
